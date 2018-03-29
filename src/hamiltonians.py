@@ -56,28 +56,38 @@ def HV(eps_x_func, deps_x_func, eps_y_func, alpha, delta_1, delta_2, lambda_t):
 
     return [[HV_1, coeff_1], [HV_2, coeff_2], [HV_3, coeff_3], [HV_4, coeff_4] , [HV_5, coeff_5]]
 
-def solve_dynamics(psi0=qutrit.eq_sup, t = np.linspace(-0.1,10.3,400), **kwargs): 
-    omega = kwargs.pop('omega', 5000) #MHz
-    alpha = kwargs.pop('alpha', -300) #MHz
-    drive_omega = kwargs.pop('drive_omega', 5000) #MHz
-    lambda_t = kwargs.pop('lambda_t', np.sqrt(2)) 
+def H_transmon(omega_01, alpha, n_levels):
+    """ returns the bare transmon Hamiltonian """ 
 
-    eps_x_fun = kwargs['eps_x_fun']
-    deps_x_fun = kwargs['deps_x_fun']
-    eps_y_fun = kwargs['eps_y_fun']
+    a = qt.destroy(n_levels)
+    H = omega_01 * a.dag() * a + alpha * a.dag() * a.dag() * a * a
 
-    options = qt.Options()
-    options.store_states = True
+    return [H, a]
 
-    delta_1 = omega - drive_omega
-    delta_2 = alpha + 2 * delta_1
+def H_two_transmons(omega_1, alpha_1, omega_2, alpha_2, g, n_levels):
+    """ returns the Hamiltonian for two coupled transmons """
 
-    HR_t = HR(eps_x_fun, deps_x_fun, eps_y_fun, alpha, delta_1, delta_2, lambda_t)
+    H1, a1 = H_transmon(omega_1, alpha_1, n_levels)
+    H2, a2 = H_transmon(omega_2, alpha_2, n_levels)
    
-    HV_t = HV(eps_x_fun, deps_x_fun, eps_y_fun, alpha, delta_1, delta_2, lambda_t)
+    H1 = qt.tensor(qt.identity(n_levels), H1)
+    H2 = qt.tensor(H2, qt.identity(n_levels))
+    a1 = qt.tensor(qt.identity(n_levels), a1)
+    a2 = qt.tensor(a2, qt.identity(n_levels))
 
-    output1 = qt.mesolve(HR_t,psi0, t, [], [qutrit.sig00, qutrit.sig11, qutrit.sig22, qutrit.sig01x, qutrit.sig12x], options=options)
+    H_total = H1 + H2 + g*(a1.dag() * a2 + a2.dag() * a1)
 
-    output2 = qt.mesolve(HV_t, psi0, t, [],  [qutrit.sig00, qutrit.sig11, qutrit.sig22, qutrit.sig01x, qutrit.sig12x, qutrit.sig02x, qutrit.sig02y], options=options)
+    return [H_total, a1, a2]
 
-    return output1, output2
+def transmon_drive(drive_function, dest_operator):
+    """ given a destruction operator and a time-dependent drive function, constructs the time-dependent 
+    Hamiltonian representing the drive """
+    
+    return [dest_operator + dest_operator.dag(), drive_function]
+
+def H_two_transmons_with_drive(omega_1, alpha_1, omega_2, alpha_2, g, n_levels, drive_function):
+    """ Constructs the full Hamiltonian for two transmons, with a drive on the first one """ 
+    [H_static, a1, a2] = H_two_transmons(omega_1, alpha_1, omega_2, alpha_2, g, n_levels) 
+    H_drive = transmon_drive(drive_function, a1)
+
+    return [H_static, H_drive]
